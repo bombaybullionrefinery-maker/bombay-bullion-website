@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Bombay Bullion Refinery — Cloud Demo</title>
+<style>
+  :root{--bg:#f6f7fb;--card:#fff;--muted:#6b7280;--green:#107230;--red:#b91c1c;--accent:#111827}
+  *{box-sizing:border-box}
+  body{font-family:Inter, Arial; margin:0; padding:12px; background:linear-gradient(180deg,#eef2ff 0%,var(--bg) 100%)}
+  .app{max-width:820px;margin:0 auto}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  header h1{margin:0;font-size:18px}
+  .card{background:var(--card);padding:12px;border-radius:10px;box-shadow:0 6px 20px rgba(2,6,23,0.04);margin-bottom:12px}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+  input, select{width:100%;padding:10px;border-radius:8px;border:1px solid #e6e9ef;font-size:16px}
+  .grid{display:grid;gap:8px}
+  .g-3{grid-template-columns:repeat(3,1fr)}
+  .g-2{grid-template-columns:repeat(2,1fr)}
+  .btn{padding:10px 14px;border-radius:8px;border:none;cursor:pointer;font-weight:600}
+  .btn-print{background:var(--green);color:#fff}
+  .btn-save{background:#0ea5a5;color:#fff}
+  .btn-danger{background:var(--red);color:#fff}
+  .small{font-size:13px;color:var(--muted)}
+  .computed{background:#f8fafc;padding:10px;border-radius:8px;margin-top:10px;font-weight:600}
+  .muted-small{font-size:12px;color:#9aa3b2}
+  .receipt{font-family:monospace;display:none}
+  @media print{.no-print{display:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>Bombay Bullion Refinery — Cloud Demo</h1>
+      <div class="small">Connected to demo API</div>
+    </div>
+    <div style="margin-left:auto">
+      <button id="refreshStock" class="btn">Refresh Stock</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+      <button id="tabBuy" class="btn" style="background:#ecfdf5;color:var(--green)">BUY</button>
+      <button id="tabSell" class="btn">SELL</button>
+      <div style="margin-left:auto">
+        <span class="small">Gold: <strong id="stockGold">-</strong> g</span> •
+        <span class="small">Silver: <strong id="stockSilver">-</strong> g</span>
+      </div>
+    </div>
+
+    <div>
+      <label>Customer</label>
+      <input id="customerInput" placeholder="type name & press Add">
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <input id="customerPhone" placeholder="phone (optional)">
+        <button id="addCustomerBtn" class="btn">Add</button>
+      </div>
+    </div>
+
+    <div style="margin-top:10px" class="grid g-3">
+      <div>
+        <label>Gross Weight (g)</label>
+        <input id="gross" type="number" step="0.001" value="10">
+      </div>
+      <div>
+        <label>Touch (eg. 916 for 22K)</label>
+        <input id="touch" type="number" step="0.001" value="916">
+      </div>
+      <div>
+        <label>Sample %</label>
+        <input id="sample" type="number" step="0.01" value="0">
+      </div>
+    </div>
+
+    <div style="margin-top:8px" class="grid g-3">
+      <div>
+        <label>Fine (g)</label>
+        <input id="fine" readonly>
+      </div>
+      <div>
+        <label>Fine after Sample (g)</label>
+        <input id="fineAfter" readonly>
+      </div>
+      <div>
+        <label>Given Gold (g)</label>
+        <input id="givenGold" type="number" step="0.001" value="0">
+      </div>
+    </div>
+
+    <div style="margin-top:8px" class="grid g-3">
+      <div>
+        <label>Diff Gold (g)</label>
+        <input id="diffGold" readonly>
+      </div>
+      <div>
+        <label>Rate per g (₹)</label>
+        <input id="rate" type="number" step="0.01" value="6000">
+      </div>
+      <div>
+        <label>Charges (₹)</label>
+        <input id="charges" type="number" step="0.01" value="0">
+      </div>
+    </div>
+
+    <div style="margin-top:8px" class="grid g-2">
+      <div>
+        <label>Given/Received Cash (₹)</label>
+        <input id="givenCash" type="number" step="0.01" value="0">
+      </div>
+      <div>
+        <label>RTGS / Note</label>
+        <input id="rtgs" type="text">
+      </div>
+    </div>
+
+    <div class="computed">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div class="small">Final Cash (₹)</div>
+          <div id="finalCash">0.00</div>
+        </div>
+        <div style="text-align:right">
+          <div class="small">Net</div>
+          <div id="netValue">0.00</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:12px;display:flex;gap:8px" class="no-print">
+      <button id="saveBtn" class="btn btn-save">Save & Print</button>
+      <button id="saveNoPrint" class="btn">Save</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Recent transactions</h3>
+    <div id="txList">loading...</div>
+  </div>
+
+  <div class="receipt" id="receipt"></div>
+</div>
+
+<script>
+const api = {
+  getStock: ()=>fetch('/api/stock').then(r=>r.json()),
+  setStock: (gold,silver,pwd)=>fetch('/api/stock',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({gold,silver,pwd})}).then(r=>r.json()),
+  getCustomers: ()=>fetch('/api/customers').then(r=>r.json()),
+  addCustomer: (name,phone)=>fetch('/api/customers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name,phone})}).then(r=>r.json()),
+  getTx: ()=>fetch('/api/transactions').then(r=>r.json()),
+  postTx: (tx)=>fetch('/api/transactions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(tx)}).then(r=>r.json())
+};
+
+let STATE = { mode: 'BUY', product: 'Gold' };
+
+function toNum(v){ return Number(v===undefined||v===''?0:v); }
+function fmt(v,n=2){ return Number(v||0).toLocaleString(undefined,{minimumFractionDigits:n, maximumFractionDigits:n}); }
+
+async function refreshStock(){
+  const res = await api.getStock();
+  if(res.ok){
+    document.getElementById('stockGold').textContent = fmt(res.stock.Gold,4);
+    document.getElementById('stockSilver').textContent = fmt(res.stock.Silver,4);
+  }
+}
+
+function compute(){
+  const gross = toNum(document.getElementById('gross').value);
+  const touch = toNum(document.getElementById('touch').value);
+  const sample = toNum(document.getElementById('sample').value);
+  const givenGold = toNum(document.getElementById('givenGold').value);
+  const rate = toNum(document.getElementById('rate').value);
+  const charges = toNum(document.getElementById('charges').value);
+  const givenCash = toNum(document.getElementById('givenCash').value);
+
+  const fine = gross * (touch/1000);
+  const fineAfter = fine - (fine * (sample/100));
+  const diff = givenGold - fineAfter;
+  const finalCash = fineAfter * rate + charges;
+  const net = finalCash - givenCash;
+
+  document.getElementById('fine').value = fine.toFixed(4);
+  document.getElementById('fineAfter').value = fineAfter.toFixed(4);
+  document.getElementById('diffGold').value = diff.toFixed(4);
+  document.getElementById('finalCash').textContent = fmt(finalCash,2);
+  document.getElementById('netValue').textContent = fmt(net,2);
+  return {gross,touch,sample,fine,fineAfter,diff,rate,charges,finalCash,net, givenCash};
+}
+
+async function loadTx(){
+  const res = await api.getTx();
+  if(res.ok){
+    const list = res.transactions || [];
+    const el = document.getElementById('txList');
+    if(list.length===0){ el.textContent='No transactions yet'; return; }
+    el.innerHTML = '';
+    list.slice(0,50).forEach(t=>{
+      const d = document.createElement('div');
+      d.style.padding='8px 0'; d.style.borderBottom='1px solid #f1f5f9';
+      d.innerHTML = `<div style="display:flex;justify-content:space-between">
+        <div><strong>${t.mode}</strong> • ${t.product} • ${t.customer||'—'}</div>
+        <div style="text-align:right"><div style="font-weight:700">${fmt(t.net,2)} ₹</div><div class="small">${new Date(t.created_at).toLocaleString()}</div></div>
+      </div>`;
+      el.appendChild(d);
+    });
+  } else {
+    document.getElementById('txList').textContent = 'Failed to load';
+  }
+}
+
+document.getElementById('tabBuy').addEventListener('click', ()=>{ STATE.mode='BUY'; document.getElementById('tabBuy').style.background='#ecfdf5'; document.getElementById('tabSell').style.background=''; });
+document.getElementById('tabSell').addEventListener('click', ()=>{ STATE.mode='SELL'; document.getElementById('tabSell').style.background='#fff1f2'; document.getElementById('tabBuy').style.background=''; });
+
+['gross','touch','sample','givenGold','rate','charges','givenCash'].forEach(id=>document.getElementById(id).addEventListener('input', compute));
+
+document.getElementById('addCustomerBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('customerInput').value.trim();
+  const phone = document.getElementById('customerPhone').value.trim();
+  if(!name){ alert('Enter customer name'); return; }
+  const res = await api.addCustomer(name, phone);
+  if(res.ok){ alert('Customer added'); }
+});
+
+document.getElementById('saveBtn').addEventListener('click', async ()=>{
+  const c = compute();
+  const tx = {
+    tx_id: 'TX' + Date.now(),
+    mode: STATE.mode,
+    product: 'Gold',
+    customer: document.getElementById('customerInput').value || null,
+    gross: c.gross, touch: c.touch, sample: c.sample, fine: c.fine, fineAfter: c.fineAfter,
+    givenGold: toNum(document.getElementById('givenGold').value), diffGold: c.diff,
+    rate: c.rate, charges: c.charges, finalCash: c.finalCash, givenCash: c.givenCash, rtgs: document.getElementById('rtgs').value, net: c.net
+  };
+  const res = await api.postTx(tx);
+  if(res.ok){
+    // show print-ready receipt in new tab
+    const w = window.open('','_blank');
+    const html = `<html><head><title>Receipt</title><style>body{font-family:monospace;padding:8px}</style></head><body>
+      <h2>Bombay Bullion Refinery</h2>
+      <div>${new Date(res.transaction.created_at).toLocaleString()}</div>
+      <pre>${JSON.stringify(res.transaction, null, 2)}</pre>
+    </body></html>`;
+    w.document.write(html); w.document.close(); w.print();
+    await refreshStock();
+    await loadTx();
+    alert('Saved and print opened');
+  } else {
+    alert('Failed to save');
+  }
+});
+
+document.getElementById('saveNoPrint').addEventListener('click', async ()=>{
+  const c = compute();
+  const tx = {
+    tx_id: 'TX' + Date.now(),
+    mode: STATE.mode,
+    product: 'Gold',
+    customer: document.getElementById('customerInput').value || null,
+    gross: c.gross, touch: c.touch, sample: c.sample, fine: c.fine, fineAfter: c.fineAfter,
+    givenGold: toNum(document.getElementById('givenGold').value), diffGold: c.diff,
+    rate: c.rate, charges: c.charges, finalCash: c.finalCash, givenCash: c.givenCash, rtgs: document.getElementById('rtgs').value, net: c.net
+  };
+  const res = await api.postTx(tx);
+  if(res.ok){
+    await refreshStock();
+    await loadTx();
+    alert('Saved');
+  } else alert('Failed');
+});
+
+document.getElementById('refreshStock').addEventListener('click', refreshStock);
+
+window.addEventListener('load', async ()=>{
+  await refreshStock();
+  await loadTx();
+  compute();
+});
+</script>
+</body>
+</html>
